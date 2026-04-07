@@ -14,60 +14,39 @@ from openenv.core.env_server.types import Action, Observation
 from pydantic import Field
 from typing import Optional, List, Dict, Any
 
-class SqlDebuggerAction(Action):
-    """Action for the Sql Debugger environment - just a message to echo."""
 
-    message: str = Field(..., description="Message to echo back")
+class SqlDebuggerAction(Action):
+    fixed_query: str = Field(..., description="The corrected SQL query")
+
+    explanation: Optional[str] = Field(
+        default=None,
+        description="Optional explanation of the fix"
+    )
 
 
 class SqlDebuggerObservation(Observation):
-
-      # 🔹 Core problem
     broken_query: str = Field(..., description="The SQL query that contains errors")
 
-    # 🔹 Database understanding
     schema_json: Dict[str, Any] = Field(
         ..., description="Database schema including tables, columns, and relationships"
     )
 
-    # 🔹 Execution feedback
     error_message: Optional[str] = Field(
-        default=None, description="Error message returned by SQLite when executing the broken query"
+        default=None, description="Error message from SQLite"
     )
 
     execution_result: Optional[List[Any]] = Field(
-        default=None, description="Query result if execution succeeds (partial or full)"
+        default=None, description="Query result if execution succeeds"
     )
 
-    # 🔹 Context awareness
     expected_output_hint: Optional[str] = Field(
-        default=None,
-        description="Hint about expected output (optional, helps learning/debugging)"
+        default=None, description="Hint about expected output"
     )
 
-    # 🔹 RL tracking
-    step_count: int = Field(
-        default=0, description="Current step number in the episode"
-    )
+    step_count: int = Field(default=0)
+    max_steps: int = Field(default=5)
 
-    max_steps: int = Field(
-        default=5, description="Maximum allowed steps in the episode"
-    )
+    last_action: Optional[str] = Field(default=None)
+    last_reward: Optional[float] = Field(default=None)
 
-    # 🔹 Debugging signals
-    last_action: Optional[str] = Field(
-        default=None, description="Last query submitted by the agent"
-    )
-
-    last_reward: Optional[float] = Field(
-        default=None, description="Reward received in the previous step"
-    )
-
-    # 🔹 Difficulty / metadata
-    difficulty: Optional[str] = Field(
-        default="medium", description="Task difficulty level"
-    )
-    """Observation from the Sql Debugger environment - the echoed message."""
-
-    #echoed_message: str = Field(default="", description="The echoed message")
-    #message_length: int = Field(default=0, description="Length of the echoed message")
+    difficulty: Optional[str] = Field(default="medium")
