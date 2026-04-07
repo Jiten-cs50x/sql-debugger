@@ -176,41 +176,53 @@ class SqlDebuggerEnvironment(Environment):
             self.initial_query = "SELEC name FROM users"
             self.expected_result = [('Alice',), ('Bob',), ('Charlie',)]
             hint = "The query has a syntax error"
+            self.difficulty = "easy"
 
         elif self.task_type == "logic":
             self.initial_query = "SELECT name FROM users WHERE age > 35"
             self.expected_result = [('Bob',), ('Charlie',)]
             hint = "The query runs but gives wrong results"
+            self.difficulty = "medium"
 
         else:  # optimize
             self.initial_query = "SELECT * FROM users WHERE age > 28"
             self.expected_result = [('Bob', 30), ('Charlie', 35)]
             hint = "The query is correct but inefficient"
+            self.difficulty = "hard"
 
-        message = f"Task: {self.task_type} | Query: {self.initial_query} | Hint: {hint}"
+        schema = {
+            "tables": {
+                "users": {
+                    "columns": ["id (INTEGER)", "name (TEXT)", "age (INTEGER)"],
+                    "sample_rows": 3
+                }
+            }
+        }
 
         return SqlDebuggerObservation(
-            echoed_message=message,
-            message_length=len(message),
-            done=False,
-            reward=0.0,
+            broken_query=self.initial_query,
+            schema_json=schema,
+            expected_output_hint=hint,
+            step_count=self._state.step_count,
+            max_steps=5,
+            difficulty=self.difficulty,
         )
 
     
     # STEP
     def step(self, action: SqlDebuggerAction) -> SqlDebuggerObservation:  # type: ignore[override]
         """
-        Execute a step: run the agent's SQL query and compute reward.
+        Execute a step: run the agent's fixed SQL query and compute reward.
 
         Args:
-            action: SqlDebuggerAction containing the SQL query to evaluate.
+            action: SqlDebuggerAction containing fixed_query and optional explanation.
 
         Returns:
             SqlDebuggerObservation with reward, done flag, and feedback.
         """
         self._state.step_count += 1
 
-        query = action.message
+        query = action.fixed_query  # updated from action.message
         result, error = self.run_query(query)
         reward = self.compute_reward(query, result, error)
 
@@ -218,19 +230,25 @@ class SqlDebuggerEnvironment(Environment):
 
         self.previous_query = query
 
-        feedback = f"Result: {result} | Error: {error} | Reward: {reward:.2f}"
+        schema = {
+            "tables": {
+                "users": {
+                    "columns": ["id (INTEGER)", "name (TEXT)", "age (INTEGER)"],
+                    "sample_rows": 3
+                }
+            }
+        }
 
         return SqlDebuggerObservation(
-            echoed_message=feedback,
-            message_length=len(feedback),
-            done=done,
-            reward=reward,
-            metadata={
-                "query": query,
-                "result": str(result),
-                "error": error,
-                "step": self._state.step_count,
-            },
+            broken_query=self.initial_query,
+            schema_json=schema,
+            error_message=error,
+            execution_result=result,
+            step_count=self._state.step_count,
+            max_steps=5,
+            last_action=query,
+            last_reward=reward,
+            difficulty=getattr(self, 'difficulty', 'medium'),
         )
 
     
