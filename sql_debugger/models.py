@@ -12,16 +12,41 @@ The sql_debugger environment is a simple test environment that echoes back messa
 
 from openenv.core.env_server.types import Action, Observation
 from pydantic import Field
+from typing import Optional, List, Dict, Any
 
 
 class SqlDebuggerAction(Action):
-    """Action for the Sql Debugger environment - just a message to echo."""
+    fixed_query: str = Field(..., description="The corrected SQL query")
 
-    message: str = Field(..., description="Message to echo back")
+    explanation: Optional[str] = Field(
+        default=None,
+        description="Optional explanation of the fix"
+    )
 
 
 class SqlDebuggerObservation(Observation):
-    """Observation from the Sql Debugger environment - the echoed message."""
+    broken_query: str = Field(..., description="The SQL query that contains errors")
 
-    echoed_message: str = Field(default="", description="The echoed message")
-    message_length: int = Field(default=0, description="Length of the echoed message")
+    schema_json: Dict[str, Any] = Field(
+        ..., description="Database schema including tables, columns, and relationships"
+    )
+
+    error_message: Optional[str] = Field(
+        default=None, description="Error message from SQLite"
+    )
+
+    execution_result: Optional[List[Any]] = Field(
+        default=None, description="Query result if execution succeeds"
+    )
+
+    expected_output_hint: Optional[str] = Field(
+        default=None, description="Hint about expected output"
+    )
+
+    step_count: int = Field(default=0)
+    max_steps: int = Field(default=5)
+
+    last_action: Optional[str] = Field(default=None)
+    last_reward: Optional[float] = Field(default=None)
+
+    difficulty: Optional[str] = Field(default="medium")

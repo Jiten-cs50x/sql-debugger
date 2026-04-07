@@ -16,6 +16,9 @@ from uuid import uuid4
 from openenv.core.env_server.interfaces import Environment  # type: ignore[import]
 from openenv.core.env_server.types import State  # type: ignore[import]
 
+import sqlite3
+conn = sqlite3.connect(":memory:")
+
 try:
     from ..models import SqlDebuggerAction, SqlDebuggerObservation
 except ImportError:
