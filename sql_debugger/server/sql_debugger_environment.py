@@ -40,7 +40,7 @@ class SqlDebuggerEnvironment(Environment):
         self._reset_count = 0
 
         # SQLite in-memory DB
-        self.conn = sqlite3.connect(":memory:")
+        self.conn = sqlite3.connect(":memory:", check_same_thread=False)
         self.cursor = self.conn.cursor()
         self._setup_db()
 
