@@ -29,7 +29,7 @@ Usage:
 """
 
 try:
-    from openenv.core.env_server.http_server import create_app
+    from openenv.core.env_server.http_server import create_app  # type: ignore[import]
 except Exception as e:  # pragma: no cover
     raise ImportError(
         "openenv is required for the web interface. Install dependencies with '\n    uv sync\n'"
@@ -38,9 +38,9 @@ except Exception as e:  # pragma: no cover
 try:
     from ..models import SqlDebuggerAction, SqlDebuggerObservation
     from .sql_debugger_environment import SqlDebuggerEnvironment
-except ModuleNotFoundError:
-    from models import SqlDebuggerAction, SqlDebuggerObservation
-    from server.sql_debugger_environment import SqlDebuggerEnvironment
+except ImportError:
+    from models import SqlDebuggerAction, SqlDebuggerObservation  # type: ignore[import]
+    from server.sql_debugger_environment import SqlDebuggerEnvironment  # type: ignore[import]
 
 
 # Create the app with web interface and README integration
