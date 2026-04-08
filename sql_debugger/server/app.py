@@ -1,21 +1,15 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
 
 """
 FastAPI application for the Sql Debugger Environment.
-
-This module creates an HTTP server that exposes the SqlDebuggerEnvironment
-over HTTP and WebSocket endpoints, compatible with EnvClient.
 """
 
 try:
     from openenv.core.env_server.http_server import create_app  # type: ignore
-except Exception as e:  # pragma: no cover
+except Exception as e:
     raise ImportError(
-        "openenv is required for the web interface. Install dependencies with:\n    uv sync\n"
+        "openenv is required. Install dependencies with:\n    uv sync\n"
     ) from e
 
 try:
@@ -38,13 +32,10 @@ app = create_app(
 
 def main():
     """
-    Entry point for running the server directly.
-
-    This ensures compatibility with OpenEnv validator and Docker runtime.
+    Entry point for validator + Docker + HF Spaces
     """
     import uvicorn
 
-    # IMPORTANT: use string reference for validator compatibility
     uvicorn.run("server.app:app", host="0.0.0.0", port=7860)
 
 
