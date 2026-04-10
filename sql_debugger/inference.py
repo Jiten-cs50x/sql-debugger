@@ -108,6 +108,8 @@ def run():
     env = SqlDebuggerEnvironment()
     obs: SqlDebuggerObservation = env.reset()
 
+    print("[START] task=sql_debugger", flush=True)
+
     rewards = []
     done = False
     prev_query = None
@@ -131,6 +133,7 @@ def run():
         print(f"Result: {obs.execution_result}")
         print(f"Base Reward: {base_reward:.2f} | Penalty: {penalty:.2f} | Final: {final_reward:.2f}")
         print(f"Done: {done}\n")
+        print(f"[STEP] step={step} reward={final_reward:.2f}", flush=True)
 
         prev_query = query
 
@@ -144,6 +147,7 @@ def run():
     print(f"Steps: {step}")
     print(f"Total Reward: {total:.2f}")
     print("=" * 40)
+    print(f"[END] task=sql_debugger score={total:.2f} steps={step}", flush=True)
 
 
 if __name__ == "__main__":
