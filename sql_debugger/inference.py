@@ -17,6 +17,13 @@ MAX_STEPS = 5
 
 client: OpenAI | None = None
 
+# Three tasks we must run — each becomes a separate [START]/[END] block
+TASKS = [
+    ("syntax",   "sql_debugger_syntax"),
+    ("logic",    "sql_debugger_logic"),
+    ("optimize", "sql_debugger_optimize"),
+]
+
 
 def generate_action(prompt: str) -> str:
     try:
@@ -30,7 +37,7 @@ def generate_action(prompt: str) -> str:
         return extract_sql(text.strip())
 
     except Exception as e:
-        print(f"[WARN] HF error: {e}")
+        print(f"[WARN] LLM error: {e}")
         return "SELECT name FROM users"
 
 
@@ -49,9 +56,9 @@ def extract_sql(text: str) -> str:
 
 def build_prompt(obs: SqlDebuggerObservation) -> str:
     task_map = {
-        "easy": "Fix the SQL syntax error",
+        "easy":   "Fix the SQL syntax error",
         "medium": "Fix the SQL logic error",
-        "hard": "Optimize the SQL query for performance",
+        "hard":   "Optimize the SQL query for performance",
     }
 
     task = task_map.get(obs.difficulty, "Fix the SQL query")
@@ -102,24 +109,70 @@ def apply_penalty(query: str, prev_query: str | None) -> float:
     return penalty
 
 
-def run():
-    if not API_KEY:
-        raise ValueError("API_KEY or HF_TOKEN is required")
+def force_task(env: SqlDebuggerEnvironment, task_type: str) -> SqlDebuggerObservation:
+    """Reset the environment and then override to a specific task type."""
+    from uuid import uuid4
+    from openenv.core.env_server.types import State  # type: ignore[import]
 
-    global client
-    client = OpenAI(
-        base_url=API_BASE_URL or "https://api-inference.huggingface.co/v1",
-        api_key=API_KEY,
+    env._state = State(episode_id=str(uuid4()), step_count=0)
+    env._reset_count += 1
+    env.previous_query = None
+    env.previous_cost = float('inf')
+    env.task_type = task_type
+
+    schema = {
+        "tables": {
+            "users": {
+                "columns": ["id (INTEGER)", "name (TEXT)", "age (INTEGER)"],
+                "sample_rows": 3
+            }
+        }
+    }
+
+    if task_type == "syntax":
+        env.initial_query = "SELEC name FROM users"
+        env.expected_result = [('Alice',), ('Bob',), ('Charlie',)]
+        env.difficulty = "easy"
+        hint = "The query has a syntax error"
+
+    elif task_type == "logic":
+        env.initial_query = "SELECT name FROM users WHERE age > 35"
+        env.expected_result = [('Bob',), ('Charlie',)]
+        env.difficulty = "medium"
+        hint = "The query runs but gives wrong results"
+
+    else:  # optimize
+        env.initial_query = "SELECT * FROM users WHERE age > 28"
+        env.expected_result = [('Bob', 30), ('Charlie', 35)]
+        env.difficulty = "hard"
+        hint = "The query is correct but inefficient"
+
+    return SqlDebuggerObservation(
+        broken_query=env.initial_query,
+        schema_json=schema,
+        expected_output_hint=hint,
+        step_count=0,
+        max_steps=MAX_STEPS,
+        difficulty=env.difficulty,
     )
 
-    env = SqlDebuggerEnvironment()
-    obs: SqlDebuggerObservation = env.reset()
 
-    print("[START] task=sql_debugger", flush=True)
+def clamp_score(raw: float) -> float:
+    """Ensure score is strictly between 0 and 1 as required by the validator."""
+    return max(0.01, min(0.99, raw))
+
+
+def run_episode(task_type: str, task_name: str) -> None:
+    """Run a single episode for one task type, printing structured output."""
+    env = SqlDebuggerEnvironment()
+    obs = force_task(env, task_type)
+
+    print(f"[START] task={task_name}", flush=True)
 
     rewards = []
     done = False
     prev_query = None
+    step = 0
 
     for step in range(1, MAX_STEPS + 1):
         prompt = build_prompt(obs)
@@ -133,28 +186,47 @@ def run():
         final_reward = base_reward + penalty
 
         rewards.append(final_reward)
-
         done = obs.execution_result == env.expected_result
 
-        print(f"Step {step} Query: {query}")
-        print(f"Result: {obs.execution_result}")
-        print(f"Base Reward: {base_reward:.2f} | Penalty: {penalty:.2f} | Final: {final_reward:.2f}")
-        print(f"Done: {done}\n")
-        print(f"[STEP] step={step} reward={final_reward:.2f}", flush=True)
+        print(f"Step {step} | Task: {task_name} | Query: {query}")
+        print(f"  Result: {obs.execution_result}")
+        print(f"  Base: {base_reward:.2f} | Penalty: {penalty:.2f} | Final: {final_reward:.2f} | Done: {done}")
+        print(f"[STEP] step={step} reward={final_reward:.4f}", flush=True)
 
         prev_query = query
 
         if done:
             break
 
-    total = sum(rewards)
+    # Normalize: divide by MAX_STEPS so max possible is 1.0, then clamp to (0.01, 0.99)
+    raw_score = sum(rewards) / MAX_STEPS
+    score = clamp_score(raw_score)
 
-    print("=" * 40)
-    print(f"Solved: {done}")
-    print(f"Steps: {step}")
-    print(f"Total Reward: {total:.2f}")
-    print("=" * 40)
-    print(f"[END] task=sql_debugger score={total:.2f} steps={step}", flush=True)
+    print(f"[END] task={task_name} score={score:.4f} steps={step}", flush=True)
+
+
+def run():
+    if not API_KEY:
+        raise ValueError("API_KEY or HF_TOKEN is required")
+
+    global client
+    client = OpenAI(
+        base_url=API_BASE_URL or "https://api-inference.huggingface.co/v1",
+        api_key=API_KEY,
+    )
+
+    print("=" * 50)
+    print("SQL Debugger — Running 3 tasks for evaluation")
+    print("=" * 50)
+
+    for task_type, task_name in TASKS:
+        print(f"\n--- Starting: {task_name} ---")
+        run_episode(task_type, task_name)
+        print(f"--- Finished: {task_name} ---\n")
+
+    print("=" * 50)
+    print("All 3 tasks complete.")
+    print("=" * 50)
 
 
 if __name__ == "__main__":
