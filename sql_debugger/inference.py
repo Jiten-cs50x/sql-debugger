@@ -3,17 +3,19 @@ import json
 import re
 import warnings
 warnings.filterwarnings("ignore")
-from huggingface_hub import InferenceClient
+from openai import OpenAI
 
 from sql_debugger.server.sql_debugger_environment import SqlDebuggerEnvironment
 from sql_debugger.models import SqlDebuggerAction, SqlDebuggerObservation
 
 
-MODEL_NAME = "meta-llama/Meta-Llama-3-8B-Instruct"
-HF_TOKEN = os.getenv("HF_TOKEN")
+# Use the validator-injected LiteLLM proxy if available, otherwise fall back to HF
+API_BASE_URL = os.getenv("API_BASE_URL")
+API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN")
+MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Meta-Llama-3-8B-Instruct")
 MAX_STEPS = 5
 
-client: InferenceClient | None = None
+client: OpenAI | None = None
 
 
 def generate_action(prompt: str) -> str:
@@ -101,11 +103,14 @@ def apply_penalty(query: str, prev_query: str | None) -> float:
 
 
 def run():
-    if not HF_TOKEN:
-        raise ValueError("HF_TOKEN is required")
+    if not API_KEY:
+        raise ValueError("API_KEY or HF_TOKEN is required")
 
     global client
-    client = InferenceClient(token=HF_TOKEN)
+    client = OpenAI(
+        base_url=API_BASE_URL or "https://api-inference.huggingface.co/v1",
+        api_key=API_KEY,
+    )
 
     env = SqlDebuggerEnvironment()
     obs: SqlDebuggerObservation = env.reset()
