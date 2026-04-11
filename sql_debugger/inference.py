@@ -129,7 +129,7 @@ def run():
 
         done = obs.execution_result == env.expected_result
 
-        print(f"[STEP {step}] Query: {query}")
+        print(f"Step {step} Query: {query}")
         print(f"Result: {obs.execution_result}")
         print(f"Base Reward: {base_reward:.2f} | Penalty: {penalty:.2f} | Final: {final_reward:.2f}")
         print(f"Done: {done}\n")
