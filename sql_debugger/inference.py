@@ -1,6 +1,8 @@
 import os
 import json
 import re
+import warnings
+warnings.filterwarnings("ignore")
 from huggingface_hub import InferenceClient
 
 from sql_debugger.server.sql_debugger_environment import SqlDebuggerEnvironment
