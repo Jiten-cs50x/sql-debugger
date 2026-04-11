@@ -1,255 +1,206 @@
 ---
 title: Sql Debugger Environment Server
-emoji: 🎽
-colorFrom: gray
-colorTo: blue
+emoji: 🛠️
+colorFrom: indigo
+colorTo: cyan
 sdk: docker
 pinned: false
 app_port: 8000
 base_path: /web
 tags:
   - openenv
+  - sql
+  - reinforcement-learning
 ---
 
-# Sql Debugger Environment
+# 🛠️ SQL Debugger Environment
 
-A simple test environment that echoes back messages. Perfect for testing the env APIs as well as demonstrating environment usage patterns.
+An **OpenEnv-compatible Reinforcement Learning environment** where an AI agent learns to fix and optimize SQL queries. The agent receives a broken SQL query and must return a corrected version, earning rewards based on how well it fixes syntax errors, logic bugs, or query inefficiency.
 
-## Quick Start
+---
 
-The simplest way to use the Sql Debugger environment is through the `SqlDebuggerEnv` class:
+## 🤖 How the Automated Validation Works
 
-```python
-from sql_debugger import SqlDebuggerAction, SqlDebuggerEnv
+> **This environment is fully automated.** The OpenEnv validation pipeline runs `inference.py` automatically — no manual testing is required by judges.
 
-try:
-    # Create environment from Docker image
-    sql_debuggerenv = SqlDebuggerEnv.from_docker_image("sql_debugger-env:latest")
+The pipeline:
+1. Resets the environment (`POST /reset`) → gets a broken SQL query
+2. Runs `inference.py` → the AI agent generates fixed queries step by step
+3. Reads the structured stdout output for `[START]`, `[STEP]`, and `[END]` blocks
+4. Scores the submission based on total reward accumulated
 
-    # Reset
-    result = sql_debuggerenv.reset()
-    print(f"Reset: {result.observation.echoed_message}")
+---
 
-    # Send multiple messages
-    messages = ["Hello, World!", "Testing echo", "Final message"]
+## 🎮 The Three Task Types
 
-    for msg in messages:
-        result = sql_debuggerenv.step(SqlDebuggerAction(message=msg))
-        print(f"Sent: '{msg}'")
-        print(f"  → Echoed: '{result.observation.echoed_message}'")
-        print(f"  → Length: {result.observation.message_length}")
-        print(f"  → Reward: {result.reward}")
+The environment randomly selects one of three task types on each reset:
 
-finally:
-    # Always clean up
-    sql_debuggerenv.close()
+| Difficulty | Broken Query | What's Wrong | Expected Output |
+|---|---|---|---|
+| `easy` | `SELEC name FROM users` | Syntax typo (`SELEC` instead of `SELECT`) | `[('Alice',), ('Bob',), ('Charlie',)]` |
+| `medium` | `SELECT name FROM users WHERE age > 35` | Logic error (no one is over 35) | `[('Bob',), ('Charlie',)]` |
+| `hard` | `SELECT * FROM users WHERE age > 28` | Inefficient (`SELECT *` fetches unneeded columns) | `[('Bob', 30), ('Charlie', 35)]` |
+
+### Correct Fix for Each Task
+
+```sql
+-- easy: fix the typo
+SELECT name FROM users
+
+-- medium: fix the logic (age >= 30, not > 35)
+SELECT name FROM users WHERE age >= 30
+
+-- hard: optimize (select only needed columns)
+SELECT name, age FROM users WHERE age > 28
 ```
 
-That's it! The `SqlDebuggerEnv.from_docker_image()` method handles:
-- Starting the Docker container
-- Waiting for the server to be ready
-- Connecting to the environment
-- Container cleanup when you call `close()`
+---
 
-## Building the Docker Image
+## 🗄️ Database Schema
 
-Before using the environment, you need to build the Docker image:
+The environment uses a simple in-memory SQLite database:
+
+```sql
+CREATE TABLE users (
+    id   INTEGER,
+    name TEXT,
+    age  INTEGER
+);
+
+-- Data:
+-- (1, 'Alice', 25)
+-- (2, 'Bob',   30)
+-- (3, 'Charlie', 35)
+```
+
+---
+
+## 🏆 Reward Function
+
+| Condition | Reward |
+|---|---|
+| Query runs without error | +0.2 |
+| Correct number of rows returned | +0.3 |
+| Exact values match expected output | +0.5 |
+| Using `SELECT *` (penalized) | -0.3 |
+| Submitting same query twice | -0.1 |
+| Using `DROP`/`DELETE`/`UPDATE` | -0.5 |
+| **Maximum per step** | **1.0** |
+
+---
+
+## 🚀 Manual Testing via the Web Interface
+
+You can manually test the environment using the interactive UI on this Space:
+
+### Step 1 — Reset (Start a new episode)
+Click **Reset** to start a fresh episode. The response tells you which task was randomly assigned:
+```json
+{
+  "observation": {
+    "broken_query": "SELEC name FROM users",
+    "difficulty": "easy",
+    "expected_output_hint": "The query has a syntax error"
+  }
+}
+```
+
+### Step 2 — Check `difficulty`, submit the right fix
+Enter your fixed query in the **Fixed Query** box and click **Step**:
+
+```
+Fixed Query: SELECT name FROM users
+```
+
+### Step 3 — Read the result
+A perfect response looks like:
+```json
+{
+  "observation": {
+    "execution_result": [["Alice"], ["Bob"], ["Charlie"]],
+    "last_reward": 1.0,
+    "difficulty": "easy"
+  },
+  "done": false
+}
+```
+`last_reward: 1.0` = maximum score ✅
+
+---
+
+## 🔌 API Endpoints
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/reset` | POST | Start a new episode, get broken query |
+| `/step` | POST | Submit a fixed query, get reward |
+| `/health` | GET | Check if server is running |
+| `/docs` | GET | Full OpenAPI / Swagger docs |
+| `/web` | GET | Interactive web UI |
+
+### cURL Examples
 
 ```bash
-# From project root
-docker build -t sql_debugger-env:latest -f server/Dockerfile .
+# Reset - start new episode
+curl -X POST https://gagandeep6378-sql-debugger.hf.space/reset \
+  -H "Content-Type: application/json" -d '{}'
+
+# Step - submit a fixed query
+curl -X POST https://gagandeep6378-sql-debugger.hf.space/step \
+  -H "Content-Type: application/json" \
+  -d '{"action": {"fixed_query": "SELECT name FROM users"}}'
+
+# Health check
+curl https://gagandeep6378-sql-debugger.hf.space/health
 ```
 
-## Deploying to Hugging Face Spaces
+---
 
-You can easily deploy your OpenEnv environment to Hugging Face Spaces using the `openenv push` command:
-
-```bash
-# From the environment directory (where openenv.yaml is located)
-openenv push
-
-# Or specify options
-openenv push --namespace my-org --private
-```
-
-The `openenv push` command will:
-1. Validate that the directory is an OpenEnv environment (checks for `openenv.yaml`)
-2. Prepare a custom build for Hugging Face Docker space (enables web interface)
-3. Upload to Hugging Face (ensuring you're logged in)
-
-### Prerequisites
-
-- Authenticate with Hugging Face: The command will prompt for login if not already authenticated
-
-### Options
-
-- `--directory`, `-d`: Directory containing the OpenEnv environment (defaults to current directory)
-- `--repo-id`, `-r`: Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)
-- `--base-image`, `-b`: Base Docker image to use (overrides Dockerfile FROM)
-- `--private`: Deploy the space as private (default: public)
-
-### Examples
-
-```bash
-# Push to your personal namespace (defaults to username/env-name from openenv.yaml)
-openenv push
-
-# Push to a specific repository
-openenv push --repo-id my-org/my-env
-
-# Push with a custom base image
-openenv push --base-image ghcr.io/meta-pytorch/openenv-base:latest
-
-# Push as a private space
-openenv push --private
-
-# Combine options
-openenv push --repo-id my-org/my-env --base-image custom-base:latest --private
-```
-
-After deployment, your space will be available at:
-`https://huggingface.co/spaces/<repo-id>`
-
-The deployed space includes:
-- **Web Interface** at `/web` - Interactive UI for exploring the environment
-- **API Documentation** at `/docs` - Full OpenAPI/Swagger interface
-- **Health Check** at `/health` - Container health monitoring
-- **WebSocket** at `/ws` - Persistent session endpoint for low-latency interactions
-
-## Environment Details
-
-### Action
-**SqlDebuggerAction**: Contains a single field
-- `message` (str) - The message to echo back
-
-### Observation
-**SqlDebuggerObservation**: Contains the echo response and metadata
-- `echoed_message` (str) - The message echoed back
-- `message_length` (int) - Length of the message
-- `reward` (float) - Reward based on message length (length × 0.1)
-- `done` (bool) - Always False for echo environment
-- `metadata` (dict) - Additional info like step count
-
-### Reward
-The reward is calculated as: `message_length × 0.1`
-- "Hi" → reward: 0.2
-- "Hello, World!" → reward: 1.3
-- Empty message → reward: 0.0
-
-## Advanced Usage
-
-### Connecting to an Existing Server
-
-If you already have a Sql Debugger environment server running, you can connect directly:
+## 🐍 Python Client Usage
 
 ```python
-from sql_debugger import SqlDebuggerEnv
+from sql_debugger import SqlDebuggerEnv, SqlDebuggerAction
 
-# Connect to existing server
-sql_debuggerenv = SqlDebuggerEnv(base_url="<ENV_HTTP_URL_HERE>")
+env = SqlDebuggerEnv(base_url="https://gagandeep6378-sql-debugger.hf.space")
 
-# Use as normal
-result = sql_debuggerenv.reset()
-result = sql_debuggerenv.step(SqlDebuggerAction(message="Hello!"))
+obs = env.reset()
+print(f"Task: {obs.observation.difficulty}")
+print(f"Broken query: {obs.observation.broken_query}")
+
+# Submit the fix
+result = env.step(SqlDebuggerAction(fixed_query="SELECT name FROM users WHERE age >= 30"))
+print(f"Reward: {result.observation.last_reward}")
+print(f"Result: {result.observation.execution_result}")
 ```
 
-Note: When connecting to an existing server, `sql_debuggerenv.close()` will NOT stop the server.
+---
 
-### Using the Context Manager
-
-The client supports context manager usage for automatic connection management:
-
-```python
-from sql_debugger import SqlDebuggerAction, SqlDebuggerEnv
-
-# Connect with context manager (auto-connects and closes)
-with SqlDebuggerEnv(base_url="http://localhost:8000") as env:
-    result = env.reset()
-    print(f"Reset: {result.observation.echoed_message}")
-    # Multiple steps with low latency
-    for msg in ["Hello", "World", "!"]:
-        result = env.step(SqlDebuggerAction(message=msg))
-        print(f"Echoed: {result.observation.echoed_message}")
-```
-
-The client uses WebSocket connections for:
-- **Lower latency**: No HTTP connection overhead per request
-- **Persistent session**: Server maintains your environment state
-- **Efficient for episodes**: Better for many sequential steps
-
-### Concurrent WebSocket Sessions
-
-The server supports multiple concurrent WebSocket connections. To enable this,
-modify `server/app.py` to use factory mode:
-
-```python
-# In server/app.py - use factory mode for concurrent sessions
-app = create_app(
-    SqlDebuggerEnvironment,  # Pass class, not instance
-    SqlDebuggerAction,
-    SqlDebuggerObservation,
-    max_concurrent_envs=4,  # Allow 4 concurrent sessions
-)
-```
-
-Then multiple clients can connect simultaneously:
-
-```python
-from sql_debugger import SqlDebuggerAction, SqlDebuggerEnv
-from concurrent.futures import ThreadPoolExecutor
-
-def run_episode(client_id: int):
-    with SqlDebuggerEnv(base_url="http://localhost:8000") as env:
-        result = env.reset()
-        for i in range(10):
-            result = env.step(SqlDebuggerAction(message=f"Client {client_id}, step {i}"))
-        return client_id, result.observation.message_length
-
-# Run 4 episodes concurrently
-with ThreadPoolExecutor(max_workers=4) as executor:
-    results = list(executor.map(run_episode, range(4)))
-```
-
-## Development & Testing
-
-### Direct Environment Testing
-
-Test the environment logic directly without starting the HTTP server:
-
-```bash
-# From the server directory
-python3 server/sql_debugger_environment.py
-```
-
-This verifies that:
-- Environment resets correctly
-- Step executes actions properly
-- State tracking works
-- Rewards are calculated correctly
-
-### Running Locally
-
-Run the server locally for development:
-
-```bash
-uvicorn server.app:app --reload
-```
-
-## Project Structure
+## 📁 Project Structure
 
 ```
 sql_debugger/
-├── .dockerignore         # Docker build exclusions
-├── __init__.py            # Module exports
-├── README.md              # This file
-├── openenv.yaml           # OpenEnv manifest
-├── pyproject.toml         # Project metadata and dependencies
-├── uv.lock                # Locked dependencies (generated)
-├── client.py              # SqlDebuggerEnv client
-├── models.py              # Action and Observation models
+├── README.md                        # This file
+├── openenv.yaml                     # OpenEnv manifest
+├── pyproject.toml                   # Dependencies
+├── inference.py                     # 🤖 AI agent (runs automatically during validation)
+├── models.py                        # Action & Observation data models
+├── client.py                        # Python client helper
 └── server/
-    ├── __init__.py        # Server module exports
-    ├── sql_debugger_environment.py  # Core environment logic
-    ├── app.py             # FastAPI application (HTTP + WebSocket endpoints)
-    └── Dockerfile         # Container image definition
+    ├── app.py                       # FastAPI server (HTTP + WebSocket)
+    ├── sql_debugger_environment.py  # Core RL environment logic
+    └── Dockerfile                   # Container definition
+```
+
+---
+
+## 🧪 Running the Validation Locally
+
+```bash
+# From the sql_debugger/ directory
+openenv validate
+```
+
+Expected output:
+```
+[OK] sql_debugger: Ready for multi-mode deployment
 ```
