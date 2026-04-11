@@ -2,7 +2,7 @@
 title: Sql Debugger Environment Server
 emoji: 🛠️
 colorFrom: indigo
-colorTo: cyan
+colorTo: blue
 sdk: docker
 pinned: false
 app_port: 8000
